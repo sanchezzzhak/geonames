@@ -1,2 +1,3 @@
 # geonames
-get city name by lan and lon corditanes (zero depences binary database end2end)
+get city name by lan and lon coordinates (zero deps binary database search end2end)
+

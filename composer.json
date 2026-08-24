@@ -1,0 +1,16 @@
+{
+  "name": "kak/geonames",
+  "description": "get city name by lan and lon coordinates (zero deps binary database search end2end)",
+  "require": {
+    "php": ">=8.2",
+    "ext-curl": "*",
+    "ext-gmp": "*",
+    "ext-json": "*",
+    "ext-zlib": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "kak\\geonames": "src"
+    }
+  }
+}
