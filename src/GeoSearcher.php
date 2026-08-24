@@ -46,13 +46,16 @@ class GeoSearcher extends AbstractGeoData
             $names['en'] = $name;
         }
 
+        $parentId = $unpacked['parent_city_id'] ?? 0;
+
         return [
             'geonameid' => (string)$unpacked['geonameid'],
+            'parentId'  => $parentId,
             'name' => $name,
             'latitude' => (float)$unpacked['latitude'],
             'longitude' => (float)$unpacked['longitude'],
             'country_code' => $countryCode,
-            'names' => $names
+            'names' => $names,
         ];
     }
 
@@ -174,6 +177,8 @@ class GeoSearcher extends AbstractGeoData
             if ($lon >= $minLon && $lon <= $maxLon) {
                 $city = $this->readCityAt($offset);
                 if ($city) {
+                    $parent = $this->findById($city['parentId']);
+                    $city['parent'] = $parent;
                     $id = $city['geonameid'];
                     if (!isset($uniqueIds[$id])) {
                         $uniqueIds[$id] = true;
@@ -190,6 +195,11 @@ class GeoSearcher extends AbstractGeoData
     public function findById(int|string $id): ?array
     {
         $id = (int)$id;
+
+        if (empty($id)) {
+            return null;
+        }
+
         $fp = fopen($this->indexIdFile, 'rb');
 
         if (!$fp) {

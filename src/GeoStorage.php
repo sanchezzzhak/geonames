@@ -47,6 +47,7 @@ class GeoStorage extends AbstractGeoData
         fseek($this->dataStream, 0, SEEK_END);
         $offset = ftell($this->dataStream);
 
+        $parentCityId = (int)($city['parent_city_id'] ?? 0);
         $geonameid = (int)$city['geonameid'];
         $lat = (float)$city['latitude'];
         $lon = (float)$city['longitude'];
@@ -57,7 +58,16 @@ class GeoStorage extends AbstractGeoData
         $nameLen = min(strlen($name), 255);
         $namesLen = min(strlen($names), 65535);
 
-        $header = pack(self::PACK_DATA, $geonameid, $lat, $lon, $countryCode, $nameLen, $namesLen);
+        $header = pack(
+            self::PACK_DATA,
+            $geonameid,
+            $parentCityId,
+            $lat,
+            $lon,
+            $countryCode,
+            $nameLen,
+            $namesLen
+        );
 
         fwrite($this->dataStream, $header);
         if ($nameLen > 0) {
