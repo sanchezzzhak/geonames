@@ -1,0 +1,6 @@
+# Binary databases
+*.bin
+*.zip
+
+# Build artifacts
+builddb
