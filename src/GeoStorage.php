@@ -19,9 +19,6 @@ class GeoStorage extends AbstractGeoData
         @unlink($this->indexLatFile);
     }
 
-    /**
-     * Открывает файловые потоки для записи
-     */
     public function open(): void
     {
         $this->dataStream = fopen($this->dataFile, 'wb');
@@ -35,7 +32,6 @@ class GeoStorage extends AbstractGeoData
     }
 
     /**
-     * Add city to file
      * @throws \JsonException
      */
     public function addCity(array $city): void
@@ -47,14 +43,22 @@ class GeoStorage extends AbstractGeoData
         fseek($this->dataStream, 0, SEEK_END);
         $offset = ftell($this->dataStream);
 
-        $parentCityId = (int)($city['parent_city_id'] ?? 0);
         $geonameid = (int)$city['geonameid'];
+        $parentCityId = (int)($city['parent_city_id'] ?? 0);
+        $districtId = (int)($city['district_id'] ?? 0);
+        $stateId = (int)($city['state_id'] ?? 0); // Extracted state reference
         $lat = (float)$city['latitude'];
         $lon = (float)$city['longitude'];
         $countryCode = substr($city['country_code'] ?? '', 0, 2);
-        $name = $city['name'] ?? '';
 
+        $fClass = $city['feature_class'] ?? '';
+        $fCode = $city['feature_code'] ?? '';
+        $isCity = ($fClass === 'P' && $fCode !== 'PPLX') ? 1 : 0;
+        $featureCodeEncoded = substr($fCode, 0, 4);
+
+        $name = $city['name'] ?? '';
         $names = json_encode($city['names'] ?? [], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
         $nameLen = min(strlen($name), 255);
         $namesLen = min(strlen($names), 65535);
 
@@ -62,9 +66,13 @@ class GeoStorage extends AbstractGeoData
             self::PACK_DATA,
             $geonameid,
             $parentCityId,
+            $districtId,
+            $stateId,
             $lat,
             $lon,
             $countryCode,
+            $isCity,
+            $featureCodeEncoded,
             $nameLen,
             $namesLen
         );
@@ -81,9 +89,6 @@ class GeoStorage extends AbstractGeoData
         fwrite($this->tmpIndexLatStream, pack(self::PACK_LAT_DATA, $lat, $lon, $offset));
     }
 
-    /**
-     * Sorts the temporary file by ID and saves the final index_id.bin
-     */
     private function saveIndexId(): void
     {
         fseek($this->tmpIndexIdStream, 0, SEEK_END);
@@ -97,7 +102,6 @@ class GeoStorage extends AbstractGeoData
 
         fseek($this->tmpIndexIdStream, 0, SEEK_SET);
         $raw = fread($this->tmpIndexIdStream, $totalBytes);
-
 
         $pairs = [];
         for ($i = 0; $i < $count; $i++) {
@@ -115,9 +119,6 @@ class GeoStorage extends AbstractGeoData
         fclose($out);
     }
 
-    /**
-     * Sorts the temporary file by Latitude and saves the final index_lat.bin
-     */
     private function saveIndexLatFile(): void
     {
         fseek($this->tmpIndexLatStream, 0, SEEK_END);

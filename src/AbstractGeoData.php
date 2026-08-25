@@ -4,11 +4,14 @@ namespace kak\geonames;
 
 abstract class AbstractGeoData
 {
-    // I=geonameid, I=parent_city_id, ff=lat/lon, a2=country, C=name_len, n=names_len
-    // 4+4+4+4+2+1+2 = 21 byte
-    public const PACK_DATA = 'IIffa2Cn';
-    public const PACK_DATA_SIZE = 21;
-    public const UNPACK_DATA = 'Igeonameid/Iparent_city_id/flatitude/flongitude/a2country_code/Cname_len/nnames_len';
+
+    // I=geonameid (4), I=parent_city_id (4), I=district_id (4), I=state_id (4), f=lat (4), f=lon (4),
+    // a2=country (2), C=is_city (1), a4=feature_code (4), C=name_len (1), n=names_len (2)
+    // 4+4+4+4+4+4+2+1+4+1+2 = 34 bytes
+    public const PACK_DATA = 'IIIIffa2Ca4Cn';
+    public const PACK_DATA_SIZE = 34;
+    public const UNPACK_DATA = 'Igeonameid/Iparent_city_id/Idistrict_id/Istate_id/flatitude/flongitude/a2country_code/Cis_city/a4feature_code/Cname_len/nnames_len';
+
 
     // 4 + 8 = 12 byte
     public const PACK_ID_DATA = 'IQ';

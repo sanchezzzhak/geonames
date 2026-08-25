@@ -4,7 +4,7 @@ namespace kak\geonames;
 
 class GeoSearcher extends AbstractGeoData
 {
-    /** @var resource|null Дескриптор файла городов удерживается для быстродействия */
+    /** @var resource|null */
     private $dataFileHandle = null;
 
     private function readCityAt($offset): ?array
@@ -25,6 +25,8 @@ class GeoSearcher extends AbstractGeoData
 
         $unpacked = unpack(self::UNPACK_DATA, $headerData);
         $countryCode = trim($unpacked['country_code'], "\0");
+        $featureCode = trim($unpacked['feature_code'], "\0 ");
+        $isCity = (bool)$unpacked['is_city'];
 
         $name = '';
         if ($unpacked['name_len'] > 0) {
@@ -46,16 +48,22 @@ class GeoSearcher extends AbstractGeoData
             $names['en'] = $name;
         }
 
-        $parentId = $unpacked['parent_city_id'] ?? 0;
+        $parentId = isset($unpacked['parent_city_id']) ? (int)$unpacked['parent_city_id'] : 0;
+        $districtId = isset($unpacked['district_id']) ? (int)$unpacked['district_id'] : 0;
+        $stateId = isset($unpacked['state_id']) ? (int)$unpacked['state_id'] : 0;
 
         return [
-            'geonameid' => (string)$unpacked['geonameid'],
-            'parentId'  => $parentId,
-            'name' => $name,
-            'latitude' => (float)$unpacked['latitude'],
-            'longitude' => (float)$unpacked['longitude'],
+            'geonameid'    => (string)$unpacked['geonameid'],
+            'parentId'     => $parentId,
+            'districtId'   => $districtId,
+            'stateId'      => $stateId,
+            'name'         => $name,
+            'latitude'     => (float)$unpacked['latitude'],
+            'longitude'    => (float)$unpacked['longitude'],
             'country_code' => $countryCode,
-            'names' => $names,
+            'is_city'      => $isCity,
+            'feature_code' => $featureCode,
+            'names'        => $names,
         ];
     }
 
@@ -82,7 +90,7 @@ class GeoSearcher extends AbstractGeoData
         return [$latDegrees, $lonDegrees];
     }
 
-    public function findByCoords(float $lat, float $lon, float $radiusKm = 10): array
+    public function findByCoords(float $lat, float $lon, float $radiusKm = 10, bool $onlyRealCities = false): array
     {
         [$latDelta, $lonDelta] = $this->kmToDegrees($radiusKm, $lat);
 
@@ -95,6 +103,10 @@ class GeoSearcher extends AbstractGeoData
         $results = [];
 
         foreach ($cities as $city) {
+            if ($onlyRealCities && !$city['is_city']) {
+                continue;
+            }
+
             $d = $this->haversine($lat, $lon, $city['latitude'], $city['longitude']);
             if ($d <= $radiusKm) {
                 $city['distance_km'] = round($d, 3);
@@ -163,36 +175,44 @@ class GeoSearcher extends AbstractGeoData
             }
         }
 
-        // Hash table instead of in_array to protect against O(N^2)
         $uniqueIds = [];
 
         for ($i = $start; $i < $end; $i++) {
             fseek($fp, $i * $recordSize);
             $data = fread($fp, $recordSize);
             $unpacked = unpack(self::UNPACK_LAT_DATA, $data);
-            $lat = round($unpacked['latitude'], $precision);
-            $lon = round($unpacked['longitude'], $precision);
             $offset = $unpacked['offset'];
 
-            if ($lon >= $minLon && $lon <= $maxLon) {
-                $city = $this->readCityAt($offset);
-                if ($city) {
-                    $parent = $this->findById($city['parentId']);
-                    $city['parent'] = $parent;
-                    $id = $city['geonameid'];
-                    if (!isset($uniqueIds[$id])) {
-                        $uniqueIds[$id] = true;
-                        $results[] = $city;
-                    }
+            $city = $this->readCityAt($offset);
+
+            if ($city) {
+                if ($city['parentId'] > 0 && $city['parentId'] !== (int)$city['geonameid']) {
+                    $city['parent'] = $this->findById($city['parentId'], false);
+                } else {
+                    $city['parent'] = null;
+                }
+
+                if ($city['districtId'] > 0 && $city['districtId'] !== (int)$city['geonameid']) {
+                    $city['district'] = $this->findById($city['districtId'], false);
+                } else {
+                    $city['district'] = null;
+                }
+
+                // Lazy load the state/province object safely
+                if ($city['stateId'] > 0 && $city['stateId'] !== (int)$city['geonameid']) {
+                    $city['state'] = $this->findById($city['stateId'], false);
+                } else {
+                    $city['state'] = null;
                 }
             }
+
         }
         fclose($fp);
 
         return $results;
     }
 
-    public function findById(int|string $id): ?array
+    public function findById(int|string $id, bool $resolveRelations = true): ?array
     {
         $id = (int)$id;
 
@@ -201,7 +221,6 @@ class GeoSearcher extends AbstractGeoData
         }
 
         $fp = fopen($this->indexIdFile, 'rb');
-
         if (!$fp) {
             return null;
         }
@@ -225,7 +244,23 @@ class GeoSearcher extends AbstractGeoData
             $unpacked = unpack(self::UNPACK_ID_DATA, $data);
             if ($unpacked['id'] === $id) {
                 fclose($fp);
-                return $this->readCityAt($unpacked['offset']);
+
+                $city = $this->readCityAt($unpacked['offset']);
+                if ($city) {
+                    // Relations are only parsed at top-level calls ($resolveRelations === true)
+                    if ($resolveRelations && $city['parentId'] > 0 && $city['parentId'] !== (int)$city['geonameid']) {
+                        $city['parent'] = $this->findById($city['parentId'], false);
+                    } else {
+                        $city['parent'] = null;
+                    }
+
+                    if ($resolveRelations && $city['districtId'] > 0 && $city['districtId'] !== (int)$city['geonameid']) {
+                        $city['district'] = $this->findById($city['districtId'], false);
+                    } else {
+                        $city['district'] = null;
+                    }
+                }
+                return $city;
             }
 
             if ($unpacked['id'] < $id) {
